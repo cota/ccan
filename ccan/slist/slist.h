@@ -65,7 +65,7 @@ struct slist_head {
  * SLIST_HEAD - define and initialize an empty slist_head
  * @name: the name of the slist.
  *
- * The SLIST_HEAD macro defines a slist_head and initializes it to an empty
+ * The SLIST_HEAD macro defines an slist_head and initializes it to an empty
  * slist.  It can be prepended by "static" to define a static slist_head.
  *
  * See also:
@@ -78,7 +78,7 @@ struct slist_head {
 	struct slist_head name = SLIST_HEAD_INIT(name)
 
 /**
- * slist_head_init - initialize a slist_head
+ * slist_head_init - initialize an slist_head
  * @h: the slist_head to set to the empty slist
  *
  * Example:
@@ -91,6 +91,34 @@ struct slist_head {
 static inline void slist_head_init(struct slist_head *h)
 {
 	h->n.next = &h->n;
+}
+
+/**
+ * slist_add_after - add an entry after an existing node in a linked slist
+ * @h: the slist_head to add the node to (for debugging)
+ * @p: the existing slist_node to add the node after
+ * @n: the new slist_node to add to the slist.
+ *
+ * The existing slist_node must already be a member of the slist.
+ * The new slist_node does not need to be initialized; it will be overwritten.
+ *
+ * Example:
+ *	struct child c1, c2, c3;
+ *	SLIST_HEAD(h);
+ *
+ *	slist_add(&h, &c1.slist);
+ *	slist_add(&h, &c3.slist);
+ *	slist_add_after(&h, &c1.slist, &c2.slist);
+ */
+#define slist_add_after(h, p, n) slist_add_after_(h, p, n, SLIST_LOC)
+static inline void slist_add_after_(struct slist_head *h,
+				    struct slist_node *p,
+				    struct slist_node *n,
+				    const char *abortstr)
+{
+	n->next = p->next;
+	p->next = n;
+	(void)slist_debug(h, abortstr);
 }
 
 /**
@@ -116,7 +144,75 @@ static inline void slist_add_(struct slist_head *h,
 }
 
 /**
- * slist_for_each - iterate through a slist.
+ * slist_empty - is an slist empty?
+ * @h: the slist_head
+ *
+ * If the slist is empty, returns true.
+ *
+ * Example:
+ *	assert(slist_empty(&parent->children) == (parent->num_children == 0));
+ */
+#define slist_empty(h) slist_empty_(h, SLIST_LOC)
+static inline bool slist_empty_(const struct slist_head *h, const char* abortstr)
+{
+	(void)slist_debug(h, abortstr);
+	return h->n.next == &h->n;
+}
+
+/**
+ * slist_top - get the first entry in an slist
+ * @h: the slist_head
+ * @type: the type of the entry
+ * @member: the slist_node member of the type
+ *
+ * If the slist is empty, returns NULL.
+ *
+ * Example:
+ *	struct child *first;
+ *	first = slist_top(&parent->children, struct child, slist);
+ *	if (!first)
+ *		printf("Empty slist!\n");
+ */
+#define slist_top(h, type, member)					\
+	((type *)slist_top_((h), slist_off_(type, member)))
+
+static inline const void *slist_top_(const struct slist_head *h, size_t off)
+{
+	if (slist_empty(h))
+		return NULL;
+	return (const char *)h->n.next - off;
+}
+
+/**
+ * slist_pop - remove the first entry in an slist
+ * @h: the slist_head
+ * @type: the type of the entry
+ * @member: the slist_node member of the type
+ *
+ * If the slist is empty, returns NULL.
+ *
+ * Example:
+ *	struct child *one;
+ *	one = slist_pop(&parent->children, struct child, slist);
+ *	if (!one)
+ *		printf("Empty slist!\n");
+ */
+#define slist_pop(h, type, member)					\
+	((type *)slist_pop_((h), slist_off_(type, member)))
+
+static inline const void *slist_pop_(struct slist_head *h, size_t off)
+{
+	struct slist_node *n;
+
+	if (slist_empty(h))
+		return NULL;
+	n = h->n.next;
+	h->n.next = n->next;
+	return (const char *)n - off;
+}
+
+/**
+ * slist_for_each - iterate through an slist.
  * @h: the slist_head (warning: evaluated multiple times!)
  * @i: the structure containing the slist_node
  * @member: the slist_node member of the structure
@@ -132,7 +228,27 @@ static inline void slist_add_(struct slist_head *h,
 	slist_for_each_off(h, i, slist_off_var_(i, member))
 
 /**
- * slist_for_each_off - iterate through a slist of memory regions.
+ * slist_next - get the next entry in a slist
+ * @h: the slist_head
+ * @i: a pointer to an entry in the slist.
+ * @member: the slist_node member of the structure
+ *
+ * If @i was the last entry in the slist, returns NULL.
+ *
+ * Example:
+ *	struct child *second;
+ *	second = slist_next(&parent->children, first, slist);
+ *	if (!second)
+ *		printf("No second child!\n");
+ */
+#define slist_next(h, i, member)						\
+	((slist_typeof(i))slist_entry_or_null(slist_debug(h,		\
+					    __FILE__ ":" stringify(__LINE__)), \
+					    (i)->member.next,		\
+					    slist_off_var_((i), member)))
+
+/**
+ * slist_for_each_off - iterate through an slist of memory regions.
  * @h: the slist_head
  * @i: the pointer to a memory region wich contains slist node data.
  * @off: offset(relative to @i) at which slist node data resides.
@@ -177,7 +293,7 @@ static inline struct slist_node *slist_node_from_off_(void *ptr, size_t off)
 	return (struct slist_node *)((char *)ptr + off);
 }
 
-/* Get the offset of the member, but make sure it's a slist_node. */
+/* Get the offset of the member, but make sure it's an slist_node. */
 #define slist_off_(type, member)					\
 	(container_off(type, member) +					\
 	 check_type(((type *)0)->member, struct slist_node))
@@ -191,5 +307,15 @@ static inline struct slist_node *slist_node_from_off_(void *ptr, size_t off)
 #else
 #define slist_typeof(var) void *
 #endif
+
+/* Returns member, or NULL if at end of slist. */
+static inline void *slist_entry_or_null(const struct slist_head *h,
+				       const struct slist_node *n,
+				       size_t off)
+{
+	if (n == &h->n)
+		return NULL;
+	return (char *)n - off;
+}
 
 #endif /* CCAN_SLIST_H */
