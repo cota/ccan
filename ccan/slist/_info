@@ -1,0 +1,71 @@
+#include "config.h"
+#include <stdio.h>
+#include <string.h>
+
+/**
+ * slist - singly-linked list routines
+ *
+ * This module defines two types: struct slist_head for anchoring lists,
+ * and struct slist_node, which is usually embedded in the structs that
+ * are to be linked in the list.
+ *
+ * Example:
+ *	#include <err.h>
+ *	#include <stdio.h>
+ *	#include <stdlib.h>
+ *	#include <ccan/slist/slist.h>
+ *
+ *	struct parent {
+ *		const char *name;
+ *		struct slist_head children;
+ *		unsigned int num_children;
+ *	};
+ *
+ *	struct child {
+ *		const char *name;
+ *		struct slist_node slist;
+ *	};
+ *
+ *	int main(int argc, char *argv[])
+ *	{
+ *		struct parent p;
+ *		struct child *c;
+ *		unsigned int i;
+ *
+ *		if (argc < 2)
+ *			errx(1, "Usage: %s parent children...", argv[0]);
+ *
+ *		p.name = argv[1];
+ *		slist_head_init(&p.children);
+ *		p.num_children = 0;
+ *		for (i = 2; i < argc; i++) {
+ *			c = malloc(sizeof(*c));
+ *			c->name = argv[i];
+ *			slist_add(&p.children, &c->slist);
+ *			p.num_children++;
+ *		}
+ *
+ *		printf("%s has %u children:", p.name, p.num_children);
+ *		slist_for_each(&p.children, c, slist)
+ *			printf("%s ", c->name);
+ *		printf("\n");
+ *		return 0;
+ *	}
+ *
+ * License: BSD-MIT
+ * Author: Emilio G. Cota <cota@braap.org>
+ */
+int main(int argc, char *argv[])
+{
+	if (argc != 2)
+		return 1;
+
+	if (strcmp(argv[1], "depends") == 0) {
+		printf("ccan/str\n");
+		printf("ccan/container_of\n");
+		printf("ccan/check_type\n");
+		return 0;
+	}
+
+	return 1;
+}

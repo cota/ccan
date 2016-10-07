@@ -2,6 +2,9 @@
 #ifndef CCAN_SLIST_H
 #define CCAN_SLIST_H
 //#define CCAN_SLIST_DEBUG 1
+#include <stdbool.h>
+#include <assert.h>
+
 #include <ccan/str/str.h>
 #include <ccan/container_of/container_of.h>
 #include <ccan/check_type/check_type.h>
@@ -37,6 +40,11 @@ struct slist_node {
 struct slist_head {
 	struct slist_node n;
 };
+
+struct slist_head *slist_check(const struct slist_head *h, const char *abortstr);
+
+struct slist_node *slist_check_node(const struct slist_node *n,
+				    const char *abortstr);
 
 #define SLIST_LOC __FILE__  ":" stringify(__LINE__)
 #ifdef CCAN_SLIST_DEBUG
@@ -160,6 +168,42 @@ static inline bool slist_empty_(const struct slist_head *h, const char* abortstr
 }
 
 /**
+ * slist_del_from_head - delete the first entry from a list.
+ * @h: the slist_head the node is in.
+ *
+ * Example:
+ *	slist_del_from_head(&parent->children);
+ *	parent->num_children--;
+ */
+static inline void slist_del_from_head(struct slist_head *h)
+{
+	/* Quick test that catches a surprising number of bugs. */
+	assert(!slist_empty(h));
+	h->n.next = h->n.next->next;
+}
+
+static inline void slist_del_after(struct slist_node *n)
+{
+	n->next = n->next->next;
+}
+
+static inline void slist_del_after_from(struct slist_head *h, struct slist_node *n)
+{
+#ifdef CCAN_SLIST_DEBUG
+	{
+		/* Thorough check: make sure it was in slist! */
+		struct slist_node *i;
+		for (i = h->n.next; i != n; i = i->next)
+			assert(i != &h->n);
+	}
+#endif /* CCAN_SLIST_DEBUG */
+
+	/* Quick test that catches a surprising number of bugs. */
+	assert(!slist_empty(h));
+	slist_del_after(n);
+}
+
+/**
  * slist_top - get the first entry in an slist
  * @h: the slist_head
  * @type: the type of the entry
@@ -228,6 +272,27 @@ static inline const void *slist_pop_(struct slist_head *h, size_t off)
 	slist_for_each_off(h, i, slist_off_var_(i, member))
 
 /**
+ * slist_for_each_safe - iterate through a list, maybe during deletion
+ * @h: the slist_head
+ * @i: the structure containing the slist_node
+ * @nxt: the structure containing the slist_node
+ * @member: the slist_node member of the structure
+ *
+ * This is a convenient wrapper to iterate @i over the entire slist.  It's
+ * a for loop, so you can break and continue as normal.  The extra variable
+ * @nxt is used to hold the next element, so you can delete @i from the slist.
+ *
+ * Example:
+ *	struct child *next;
+ *	slist_for_each_safe(&parent->children, child, next, slist) {
+ *		slist_del_from_head(&parent->children);
+ *		parent->num_children--;
+ *	}
+ */
+#define slist_for_each_safe(h, i, nxt, member)				\
+	slist_for_each_safe_off(h, i, nxt, slist_off_var_(i, member))
+
+/**
  * slist_next - get the next entry in a slist
  * @h: the slist_head
  * @i: a pointer to an entry in the slist.
@@ -282,6 +347,32 @@ static inline const void *slist_pop_(struct slist_head *h, size_t off)
 	     slist_node_from_off_((void *)i, (off)) != &(h)->n;		\
 	     i = slist_node_to_off_(slist_node_from_off_((void *)i,	\
 					(off))->next, (off)))
+
+/**
+ * slist_for_each_safe_off - iterate through a slist of memory regions, maybe
+ * during deletion
+ * @h: the slist_head
+ * @i: the pointer to a memory region wich contains slist node data.
+ * @nxt: the structure containing the slist_node
+ * @off: offset(relative to @i) at which slist node data resides.
+ *
+ * For details see `slist_for_each_off' and `slist_for_each_safe'
+ * descriptions.
+ *
+ * Example:
+ *	slist_for_each_safe_off(&parent->children, child,
+ *		next, offsetof(struct child, slist))
+ *		printf("Name: %s\n", child->name);
+ */
+#define slist_for_each_safe_off(h, i, nxt, off)				\
+	for (i = slist_node_to_off_(slist_debug(h, SLIST_LOC)->n.next,	\
+				    (off)),				\
+	nxt = slist_node_to_off_(slist_node_from_off_(i, (off))->next, 	\
+				 (off));				\
+	slist_node_from_off_(i, (off)) != &(h)->n;			\
+	i = nxt,							\
+	nxt = slist_node_to_off_(slist_node_from_off_(i, (off))->next,	\
+				 (off)))
 
 /* Offset helper functions so we only single-evaluate. */
 static inline void *slist_node_to_off_(struct slist_node *node, size_t off)
